@@ -2,19 +2,17 @@ from copy import copy
 import tqdm
 from experiment_wrapper.experiment import Experiment, ScenarioList
 import numpy as np
-import warnings
-
-warnings.simplefilter(action="ignore", category=FutureWarning)
 import pandas as pd
 from typing import Optional, List, Tuple
 import matplotlib.pyplot as plt
-from matplotlib.pyplot import figure
+from matplotlib.figure import Figure
 import seaborn as sns
+import warnings
+import logging
+
+warnings.simplefilter(action="ignore", category=FutureWarning)
 
 
-# FIXME: Requires testing!
-# TODO: figure out how to have an argument that is either a torch.Tensor or a np.ndarray
-# TODO: What makes more sense: Save all the data and then decide later what to plot? Or save only the data that is needed for plotting?
 class RolloutTrajectory(Experiment):
     def __init__(
         self,
@@ -36,7 +34,7 @@ class RolloutTrajectory(Experiment):
             start_x (np.ndarray): Starting states [n_start_states, n_dims]
             x_indices (List[int]): A list of the indices of state variables to log
             u_indices (List[int]): A list of the indices of control variables to log
-            scenarios (Optional[ScenarioList], optional): ADifferent scenarios. Defaults to None.
+            scenarios (Optional[ScenarioList], optional): Different scenarios. Defaults to None.
             n_sims_per_start (int, optional): . Defaults to 5.
             t_sim (float, optional): _description_. Defaults to 5.0.
         """
@@ -51,7 +49,7 @@ class RolloutTrajectory(Experiment):
         self.t_sim = t_sim
 
     def set_idx_and_labels(self, dynamics):
-        if self.x_indices is None:
+        if self.x_indices is None:  # FIXME: None or [] for initialization?
             self.x_indices = list(range(dynamics.n_dims))
         # Default to saving all controls
         if self.u_indices is None:
@@ -61,20 +59,14 @@ class RolloutTrajectory(Experiment):
         if self.u_labels is None:
             self.u_labels = [dynamics.CONTROLS[idi] for idi in self.u_indices]
 
-    # TODO: Optional have multiple controllers too!
     def run(self, dynamics, controllers) -> pd.DataFrame:
-        """At every time step:
+        """Overrides Experiment.run for rollout trajectory experiments. Same args as Experiment.run
+
+        At every time step:
         1) Check whether the control needs to be updated
-        2) Save the current data
-        3) Take step in the dynamics
-
-        Args:
-            controller ([type]): Class with callable methods (u) and optionally (is_unsafe, reset, V)
-
-        Returns:
-            pd.DataFrame: [description]
+        2) Log the current data
+        3) Take step in the simulation
         """
-        # Default to saving all state variables
         if not isinstance(controllers, list):
             controllers = [controllers]
         self.set_idx_and_labels(dynamics)
@@ -89,6 +81,7 @@ class RolloutTrajectory(Experiment):
                     x_sim_start[i * self.n_sims_per_start + j, :] = self.start_x[i, :]
 
             x_current = x_sim_start
+            u_current = np.zeros((n_sims, dynamics.control_dims))
             if hasattr(controller, "reset_controller"):
                 controller.reset(x_current)
 
@@ -120,18 +113,14 @@ class RolloutTrajectory(Experiment):
                     base_log_packet["scenario"] = sim_index % self.n_sims_per_start
                     base_log_packet["rollout"] = sim_index // self.n_sims_per_start
 
-                    if hasattr(
-                        controller, "is_unsafe"
-                    ):  # TODO: Have a call to controller that decides on what is loggable for each dict
-                        base_log_packet["unsafe"] = controller.is_unsafe(
-                            x_current[sim_index]
-                        )  # TODO: Check where this call is made and make it optional
+                    if hasattr(controller, "save_info"):
+                        base_log_packet.update(
+                            controller.save_info(x_current[sim_index], u_current[sim_index], t)
+                        )
 
                     for i, state_index in enumerate(self.x_indices):
                         log_packet = copy(base_log_packet)
-                        log_packet["measurement"] = self.x_labels[
-                            i
-                        ]  # TODO: Maybe use dynamics attribute
+                        log_packet["measurement"] = self.x_labels[i]
                         log_packet["value"] = x_current[sim_index, state_index]
                         results.append(log_packet)
 
@@ -141,12 +130,12 @@ class RolloutTrajectory(Experiment):
                         log_packet["value"] = u_current[sim_index, control_index]
                         results.append(log_packet)
 
-                    if hasattr(
-                        controller, "cbf"
-                    ):  # TODO: have a call to controller that decides what measurements should also be logged
+                    if hasattr(controller, "save_measurements"):
                         log_packet = copy(base_log_packet)
-                        log_packet["measurement"] = "vf"
-                        log_packet["value"] = controller.cbf.vf(x_current[sim_index])
+                        for key, value in controller.save_measurements(
+                            x_current[sim_index], u_current[sim_index], t
+                        ).items():
+                            log_packet[key] = value
                         results.append(log_packet)
 
                 ########### SIMULATION ###############
@@ -157,15 +146,30 @@ class RolloutTrajectory(Experiment):
 
 class TimeSeriesExperiment(RolloutTrajectory):
     def plot(
-        self, dynamics, results_df: pd.DataFrame, display_plots: bool = False
-    ) -> List[Tuple[str, figure]]:
+        self,
+        dynamics,
+        results_df: pd.DataFrame,
+        extra_measurements: list = [],
+        display_plots: bool = False,
+    ) -> List[Tuple[str, Figure]]:
+        """Overrides Experiment.plot to plot the time series of the measurements. Same args as Experiment.plot, but also:
+
+        Extra Args:
+            extra_measurements (list, optional): other variables (beyond x_labels and y_labels to display).
+        """
         self.set_idx_and_labels(dynamics)
         sns.set_theme(context="talk", style="white", palette="colorblind")
 
-        plot_V = "vf" in results_df.measurement.values
-        num_plots = len(self.x_indices) + len(self.u_indices) + int(plot_V)
+        extra_measurements = copy(extra_measurements)
+        for measurement in extra_measurements:
+            if measurement not in results_df.measurement.values:
+                logging.warning("Measurement {} not in results dataframe".format(measurement))
+                extra_measurements.remove(measurement)
+
+        num_plots = len(self.x_indices) + len(self.u_indices) + len(extra_measurements)
 
         fig, axs = plt.subplots(num_plots, 1, sharex=True)
+        axs = np.array(axs)  # Also a np.array for num_plots = 1
         fig.set_size_inches(10, 4 * num_plots)
         for controller in results_df.controller.unique():
             for scenario in results_df.scenario.unique():
@@ -188,11 +192,11 @@ class TimeSeriesExperiment(RolloutTrajectory):
                         ax.plot(results_df[control_mask].t, results_df[control_mask].value)
                         ax.set_ylabel(control_label)
 
-                    if plot_V:
-                        ax = axs[-1]
-                        V_mask = mask & (results_df.measurement.values == "vf")
-                        ax.plot(results_df[V_mask].t, results_df[V_mask].value)
-                        ax.set_ylabel("$vf$")
+                    for i, extra_label in enumerate(extra_measurements):
+                        ax = axs[len(self.x_labels) + len(self.u_labels) + i]
+                        extra_mask = mask & (results_df.measurement.values == extra_label)
+                        ax.plot(results_df[extra_mask].t, results_df[extra_mask].value)
+                        ax.set_ylabel(extra_label)
 
         axs[-1].set_xlabel("t")
 
@@ -207,10 +211,12 @@ class TimeSeriesExperiment(RolloutTrajectory):
 class StateSpaceExperiment(RolloutTrajectory):
     def plot(
         self, dynamics, results_df: pd.DataFrame, display_plots: bool = False
-    ) -> List[Tuple[str, figure]]:
+    ) -> List[Tuple[str, Figure]]:
+        """Overrides Experiment.plot to plot state space data. Same args as Experiment.plot"""
         self.set_idx_and_labels(dynamics)
         assert len(self.x_labels) in [2, 3], "Can't plot in this dimension!"
 
+        # 2D visualization
         if len(self.x_labels) == 2:
             fig, ax = plt.subplots()
             fig.set_size_inches(9, 6)
@@ -227,5 +233,11 @@ class StateSpaceExperiment(RolloutTrajectory):
                             results_df[mask][self.x_labels[0]].value,
                             results_df[mask][self.x_labels[1]].value,
                         )
+            ax.set_xlabel(self.x_labels[0])
+            ax.set_ylabel(self.x_labels[1])
+        # 3D visualization
         else:
             raise NotImplementedError("Future work!")
+
+        fig_handle = ("State space visualization", fig)
+        return [fig_handle]
