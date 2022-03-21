@@ -135,7 +135,8 @@ class RolloutTrajectory(Experiment):
                         for key, value in controller.save_measurements(
                             x_current[sim_index], u_current[sim_index], t
                         ).items():
-                            log_packet[key] = value
+                            log_packet["measurement"] = key
+                            log_packet["value"] = value
                         results.append(log_packet)
 
                 ########### SIMULATION ###############
@@ -199,6 +200,7 @@ class TimeSeriesExperiment(RolloutTrajectory):
                         ax.set_ylabel(extra_label)
 
         axs[-1].set_xlabel("t")
+        axs[-1].set_xlim(min(results_df.t), max(results_df.t))
 
         fig_handle = ("Rollout (time series)", fig)
 
