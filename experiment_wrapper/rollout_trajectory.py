@@ -1,6 +1,6 @@
 from copy import copy
 import tqdm
-from experiment_wrapper.experiment import Experiment, ScenarioList
+from experiment_wrapper import Experiment, ScenarioList
 import numpy as np
 import pandas as pd
 from typing import Optional, List, Tuple
@@ -67,15 +67,15 @@ class RolloutTrajectory(Experiment):
         2) Log the current data
         3) Take step in the simulation
         """
-        if not isinstance(controllers, list):
-            controllers = [controllers]
+        if not isinstance(controllers, dict):
+            controllers = {controllers.__class__.__name__: controllers}
         self.set_idx_and_labels(dynamics)
 
         results = []
         n_sims = self.n_sims_per_start * self.start_x.shape[0]
         x_sim_start = np.zeros((n_sims, dynamics.n_dims))
 
-        for controller in controllers:
+        for controller_name, controller in controllers.items():
             for i in range(0, self.start_x.shape[0]):
                 for j in range(0, self.n_sims_per_start):
                     x_sim_start[i * self.n_sims_per_start + j, :] = self.start_x[i, :]
@@ -91,7 +91,7 @@ class RolloutTrajectory(Experiment):
                 if hasattr(controller, "controller_dt")
                 else 1
             )
-            num_steps = int(self.t_sim // delta_t)
+            num_steps = int(self.t_sim / delta_t)
 
             prog_bar_range = tqdm.tqdm(range(0, num_steps), desc="Controller rollout")
 
@@ -105,11 +105,7 @@ class RolloutTrajectory(Experiment):
                 ########### LOGGING ###############
                 for sim_index in range(n_sims):
                     base_log_packet = {"t": t}
-                    base_log_packet["controller"] = (
-                        controller.__class__.__name__
-                        if hasattr(controller, "__class__")
-                        else "Base"
-                    )
+                    base_log_packet["controller"] = controller_name
                     base_log_packet["scenario"] = sim_index % self.n_sims_per_start
                     base_log_packet["rollout"] = sim_index // self.n_sims_per_start
 
@@ -222,7 +218,6 @@ class StateSpaceExperiment(RolloutTrajectory):
         if len(self.x_labels) == 2:
             fig, ax = plt.subplots()
             fig.set_size_inches(9, 6)
-
             for controller in results_df.controller.unique():
                 for scenario in results_df.scenario.unique():
                     for rollout in results_df.rollout.unique():
@@ -231,10 +226,13 @@ class StateSpaceExperiment(RolloutTrajectory):
                             & (results_df.scenario == scenario)
                             & (results_df.rollout == rollout)
                         )
-                        ax.plot(
-                            results_df[mask][self.x_labels[0]].value,
-                            results_df[mask][self.x_labels[1]].value,
-                        )
+                        xmask = mask & (results_df.measurement.values == self.x_labels[0])
+                        ymask = mask & (results_df.measurement.values == self.x_labels[1])
+                        xvals = results_df[xmask].value.values
+                        yvals = results_df[ymask].value.values
+                        l = ax.plot(xvals, yvals)
+                        ax.plot(xvals[0], yvals[0], "o", color=l[0].get_color())
+                        ax.plot(xvals[-1], yvals[-1], "x", color=l[0].get_color())
             ax.set_xlabel(self.x_labels[0])
             ax.set_ylabel(self.x_labels[1])
         # 3D visualization

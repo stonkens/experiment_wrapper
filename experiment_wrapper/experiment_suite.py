@@ -1,6 +1,6 @@
 """A collection suite manages a collection of experiments, allowing the user to run all of them in a single run."""
 
-from experiment_wrapper.experiment import Experiment
+from experiment_wrapper import Experiment
 from typing import List, Tuple
 import pandas as pd
 import os

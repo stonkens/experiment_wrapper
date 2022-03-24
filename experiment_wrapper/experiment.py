@@ -12,11 +12,12 @@ Each experiment should do the following:
 
 from abc import ABCMeta
 
-from typing import List, Tuple, Dict
+from typing import Any, List, Tuple, Dict
 from matplotlib.pyplot import figure
 
 Scenario = Dict[str, float]
 ScenarioList = List[Scenario]
+Controllers = Dict[str, Any]
 
 
 class Experiment(metaclass=ABCMeta):
@@ -24,13 +25,13 @@ class Experiment(metaclass=ABCMeta):
         super().__init__()
         self.name = name
 
-    def run(self, dynamics, controllers):
+    def run(self, dynamics, controllers: Controllers):
         """
         Run the experiment on a given controller
 
         Args:
             dynamics (Dynamics): Dynamics object, with miniminum signature: control_dims, n_dims, step(x,u,t), dt
-            controllers ([type]): List of or single callable function with minimum signature: __call__(x, t)
+            controllers ({str: Any}): Dict of or single callable function with minimum signature: __call__(x, t)
         Returns:
             a pandas Dataframe containing the result of the experiment (each row corresponding to a single observation
             from the experiment)
