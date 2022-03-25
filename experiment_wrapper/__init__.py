@@ -91,4 +91,4 @@ from experiment_wrapper.rollout_trajectory import (
 )
 from experiment_wrapper.experiment_suite import ExperimentSuite
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
