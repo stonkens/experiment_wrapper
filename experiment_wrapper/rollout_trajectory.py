@@ -1,6 +1,6 @@
 from copy import copy
 import tqdm
-from experiment_wrapper import Experiment, ScenarioList
+from experiment_wrapper import Experiment, ScenarioList, Controllers, Dynamics
 import numpy as np
 import pandas as pd
 from typing import Optional, List, Tuple
@@ -48,7 +48,7 @@ class RolloutTrajectory(Experiment):
         self.n_sims_per_start = n_sims_per_start  # For random disturbances
         self.t_sim = t_sim
 
-    def set_idx_and_labels(self, dynamics):
+    def set_idx_and_labels(self, dynamics: Dynamics):
         if self.x_indices is None:  # FIXME: None or [] for initialization?
             self.x_indices = list(range(dynamics.n_dims))
         # Default to saving all controls
@@ -59,7 +59,7 @@ class RolloutTrajectory(Experiment):
         if self.u_labels is None:
             self.u_labels = [dynamics.CONTROLS[idi] for idi in self.u_indices]
 
-    def run(self, dynamics, controllers) -> pd.DataFrame:
+    def run(self, dynamics: Dynamics, controllers: Controllers) -> pd.DataFrame:
         """Overrides Experiment.run for rollout trajectory experiments. Same args as Experiment.run
 
         At every time step:
@@ -144,7 +144,7 @@ class RolloutTrajectory(Experiment):
 class TimeSeriesExperiment(RolloutTrajectory):
     def plot(
         self,
-        dynamics,
+        dynamics: Dynamics,
         results_df: pd.DataFrame,
         extra_measurements: list = [],
         display_plots: bool = False,
@@ -208,7 +208,7 @@ class TimeSeriesExperiment(RolloutTrajectory):
 
 class StateSpaceExperiment(RolloutTrajectory):
     def plot(
-        self, dynamics, results_df: pd.DataFrame, display_plots: bool = False
+        self, dynamics: Dynamics, results_df: pd.DataFrame, display_plots: bool = False
     ) -> List[Tuple[str, Figure]]:
         """Overrides Experiment.plot to plot state space data. Same args as Experiment.plot"""
         self.set_idx_and_labels(dynamics)

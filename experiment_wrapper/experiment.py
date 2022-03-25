@@ -11,13 +11,14 @@ Each experiment should do the following:
     """
 
 from abc import ABCMeta
-
-from typing import Any, List, Tuple, Dict
-from matplotlib.pyplot import figure
+from experiment_wrapper import Dynamics, Controller
+from typing import List, Tuple, Dict
+import pandas as pd
+from matplotlib.figure import Figure
 
 Scenario = Dict[str, float]
 ScenarioList = List[Scenario]
-Controllers = Dict[str, Any]
+Controllers = Dict[str, Controller]
 
 
 class Experiment(metaclass=ABCMeta):
@@ -25,7 +26,7 @@ class Experiment(metaclass=ABCMeta):
         super().__init__()
         self.name = name
 
-    def run(self, dynamics, controllers: Controllers):
+    def run(self, dynamics: Dynamics, controllers: Controllers) -> pd.DataFrame:
         """
         Run the experiment on a given controller
 
@@ -38,7 +39,9 @@ class Experiment(metaclass=ABCMeta):
         """
         raise NotImplementedError("run() must be implemented by a subclass")
 
-    def plot(self, dynamics, results_df, display_plots: bool = False) -> List[Tuple[str, figure]]:
+    def plot(
+        self, dynamics: Dynamics, results_df: pd.DataFrame, display_plots: bool = False
+    ) -> List[Tuple[str, Figure]]:
         """
         Visualize the results of the experiment
 
@@ -52,7 +55,7 @@ class Experiment(metaclass=ABCMeta):
         """
         raise NotImplementedError("plot() must be implemented by a subclass")
 
-    def run_and_save_to_csv(self, dynamics, controllers, save_dir: str):
+    def run_and_save_to_csv(self, dynamics: Dynamics, controllers: Controllers, save_dir: str):
         import os
 
         os.makedirs(save_dir, exist_ok=True)
@@ -61,6 +64,8 @@ class Experiment(metaclass=ABCMeta):
         results = self.run(dynamics, controllers)
         results.to_csv(filename, index=False)
 
-    def run_and_plot(self, dynamics, controllers, display_plots: bool = False):
+    def run_and_plot(
+        self, dynamics: Dynamics, controllers: Controllers, display_plots: bool = False
+    ) -> List[Tuple[str, Figure]]:
         results_df = self.run(dynamics, controllers)
         return self.plot(dynamics, results_df, display_plots)
