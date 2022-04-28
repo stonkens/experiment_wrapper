@@ -10,6 +10,8 @@ import seaborn as sns
 import warnings
 import logging
 
+logger = logging.getLogger(__name__)
+
 warnings.simplefilter(action="ignore", category=FutureWarning)
 
 
@@ -127,13 +129,13 @@ class RolloutTrajectory(Experiment):
                         results.append(log_packet)
 
                     if hasattr(controller, "save_measurements"):
-                        log_packet = copy(base_log_packet)
                         for key, value in controller.save_measurements(
                             x_current[sim_index], u_current[sim_index], t
                         ).items():
+                            log_packet = copy(base_log_packet)
                             log_packet["measurement"] = key
                             log_packet["value"] = value
-                        results.append(log_packet)
+                            results.append(log_packet)
 
                 ########### SIMULATION ###############
                 x_current = dynamics.step(x_current, u_current, t)
@@ -148,6 +150,7 @@ class TimeSeriesExperiment(RolloutTrajectory):
         results_df: pd.DataFrame,
         extra_measurements: list = [],
         display_plots: bool = False,
+        **kwargs
     ) -> List[Tuple[str, Figure]]:
         """Overrides Experiment.plot to plot the time series of the measurements. Same args as Experiment.plot, but also:
 
@@ -160,14 +163,20 @@ class TimeSeriesExperiment(RolloutTrajectory):
         extra_measurements = copy(extra_measurements)
         for measurement in extra_measurements:
             if measurement not in results_df.measurement.values:
-                logging.warning("Measurement {} not in results dataframe".format(measurement))
+                logger.warning("Measurement {} not in results dataframe".format(measurement))
                 extra_measurements.remove(measurement)
-
+        axs = kwargs.get("axs")
         num_plots = len(self.x_indices) + len(self.u_indices) + len(extra_measurements)
 
-        fig, axs = plt.subplots(num_plots, 1, sharex=True)
+        if axs is None:
+            fig, axs = plt.subplots(num_plots, 1, sharex=True)
+            fig.set_size_inches(10, 4 * num_plots)
+        else:
+            assert axs.shape[0] == num_plots
+            fig = axs[0].get_figure()
+
         axs = np.array(axs)  # Also a np.array for num_plots = 1
-        fig.set_size_inches(10, 4 * num_plots)
+
         for controller in results_df.controller.unique():
             for scenario in results_df.scenario.unique():
                 for rollout in results_df.rollout.unique():
@@ -208,16 +217,22 @@ class TimeSeriesExperiment(RolloutTrajectory):
 
 class StateSpaceExperiment(RolloutTrajectory):
     def plot(
-        self, dynamics: Dynamics, results_df: pd.DataFrame, display_plots: bool = False
+        self, dynamics: Dynamics, results_df: pd.DataFrame, display_plots: bool = False, **kwargs
     ) -> List[Tuple[str, Figure]]:
         """Overrides Experiment.plot to plot state space data. Same args as Experiment.plot"""
         self.set_idx_and_labels(dynamics)
         assert len(self.x_labels) in [2, 3], "Can't plot in this dimension!"
 
+        ax = kwargs.get("ax")
         # 2D visualization
         if len(self.x_labels) == 2:
-            fig, ax = plt.subplots()
-            fig.set_size_inches(9, 6)
+
+            if ax is None:
+                fig, ax = plt.subplots()
+                fig.set_size_inches(9, 6)
+            else:
+                fig = None
+
             for controller in results_df.controller.unique():
                 for scenario in results_df.scenario.unique():
                     for rollout in results_df.rollout.unique():
