@@ -158,8 +158,11 @@ class TimeSeriesExperiment(RolloutTrajectory):
             extra_measurements (list, optional): other variables (beyond x_labels and y_labels to display).
         """
         self.set_idx_and_labels(dynamics)
-        sns.set_theme(context="talk", style="white", palette="colorblind")
-
+        sns.set_theme(context="talk", style="white")
+        default_colors = sns.color_palette("colorblind")
+        colors = kwargs.get("colors", default_colors)
+        alpha = kwargs.get('alpha', [1] * len(results_df.controller.unique()))
+        linestyles = kwargs.get('linestyles', ['-'] * len(results_df.controller.unique()))
         extra_measurements = copy(extra_measurements)
         for measurement in extra_measurements:
             if measurement not in results_df.measurement.values:
@@ -177,7 +180,9 @@ class TimeSeriesExperiment(RolloutTrajectory):
 
         axs = np.array(axs)  # Also a np.array for num_plots = 1
 
+        num = -1
         for controller in results_df.controller.unique():
+            num += 1
             for scenario in results_df.scenario.unique():
                 for rollout in results_df.rollout.unique():
                     mask = (
@@ -189,19 +194,23 @@ class TimeSeriesExperiment(RolloutTrajectory):
                     for i, state_label in enumerate(self.x_labels):
                         ax = axs[i]
                         state_mask = mask & (results_df.measurement.values == state_label)
-                        ax.plot(results_df[state_mask].t, results_df[state_mask].value)
+                        ax.plot(results_df[state_mask].t, results_df[state_mask].value, 
+                                color=colors[num], alpha=alpha[num], ls=linestyles[num])
                         ax.set_ylabel(state_label)
 
                     for i, control_label in enumerate(self.u_labels):
                         ax = axs[len(self.x_labels) + i]
                         control_mask = mask & (results_df.measurement.values == control_label)
-                        ax.plot(results_df[control_mask].t, results_df[control_mask].value)
+                        ax.plot(results_df[control_mask].t, results_df[control_mask].value, 
+                                color=colors[num], alpha=alpha[num], ls=linestyles[num])
+                        ax.set_ylabel(control_label)
                         ax.set_ylabel(control_label)
 
                     for i, extra_label in enumerate(extra_measurements):
                         ax = axs[len(self.x_labels) + len(self.u_labels) + i]
                         extra_mask = mask & (results_df.measurement.values == extra_label)
-                        ax.plot(results_df[extra_mask].t, results_df[extra_mask].value)
+                        ax.plot(results_df[extra_mask].t, results_df[extra_mask].value,
+                                color=colors[num], alpha=alpha[num], ls=linestyles[num])
                         ax.set_ylabel(extra_label)
 
         axs[-1].set_xlabel("t")
@@ -224,6 +233,8 @@ class StateSpaceExperiment(RolloutTrajectory):
         assert len(self.x_labels) in [2, 3], "Can't plot in this dimension!"
 
         ax = kwargs.get("ax")
+        alpha = kwargs.get('alpha', [1] * len(results_df.controller.unique()))
+        linestyles = kwargs.get('linestyles', ['-'] * len(results_df.controller.unique()))
         # 2D visualization
         if len(self.x_labels) == 2:
 
@@ -231,9 +242,10 @@ class StateSpaceExperiment(RolloutTrajectory):
                 fig, ax = plt.subplots()
                 fig.set_size_inches(9, 6)
             else:
-                fig = None
-
+                fig = ax.get_figure()
+            i = -1
             for controller in results_df.controller.unique():
+                i += 1
                 for scenario in results_df.scenario.unique():
                     for rollout in results_df.rollout.unique():
                         mask = (
@@ -245,9 +257,14 @@ class StateSpaceExperiment(RolloutTrajectory):
                         ymask = mask & (results_df.measurement.values == self.x_labels[1])
                         xvals = results_df[xmask].value.values
                         yvals = results_df[ymask].value.values
-                        l = ax.plot(xvals, yvals)
-                        ax.plot(xvals[0], yvals[0], "o", color=l[0].get_color())
-                        ax.plot(xvals[-1], yvals[-1], "x", color=l[0].get_color())
+                        
+                        if kwargs.get('color') is None:
+                            l = ax.plot(xvals, yvals, alpha=alpha[i])
+                        else:
+                            l = ax.plot(xvals, yvals, color=kwargs.get('color')[i], alpha=alpha[i], ls=linestyles[i])
+                        add_arrow(l[0], direction='right', position=(xvals[0] + xvals[-1]) / 2)
+                        ax.plot(xvals[0], yvals[0], "o", color=l[0].get_color(), alpha=alpha[i])
+                        ax.plot(xvals[-1], yvals[-1], "x", color=l[0].get_color(), alpha=alpha[i])
             ax.set_xlabel(self.x_labels[0])
             ax.set_ylabel(self.x_labels[1])
         # 3D visualization
@@ -256,3 +273,36 @@ class StateSpaceExperiment(RolloutTrajectory):
 
         fig_handle = ("State space visualization", fig)
         return [fig_handle]
+
+
+def add_arrow(line, position=None, direction='right', size=25, color=None):
+    """
+    add an arrow to a line.
+
+    line:       Line2D object
+    position:   x-position of the arrow. If None, mean of xdata is taken
+    direction:  'left' or 'right'
+    size:       size of the arrow in fontsize points
+    color:      if None, line color is taken.
+    """
+    if color is None:
+        color = line.get_color()
+
+    xdata = line.get_xdata()
+    ydata = line.get_ydata()
+
+    if position is None:
+        position = xdata.mean()
+    # find closest index
+    start_ind = np.argmin(np.absolute(xdata - position - 5 + 10 * np.random.rand()))
+    if direction == 'right':
+        end_ind = start_ind + 1
+    else:
+        end_ind = start_ind - 1
+
+    line.axes.annotate('',
+        xytext=(xdata[start_ind], ydata[start_ind]),
+        xy=(xdata[end_ind], ydata[end_ind]),
+        arrowprops=dict(arrowstyle="simple", color=color),
+        size=size
+    )
