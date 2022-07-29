@@ -262,7 +262,8 @@ class StateSpaceExperiment(RolloutTrajectory):
                             l = ax.plot(xvals, yvals, alpha=alpha[i])
                         else:
                             l = ax.plot(xvals, yvals, color=kwargs.get('color')[i], alpha=alpha[i], ls=linestyles[i])
-                        add_arrow(l[0], direction='right', position=(xvals[0] + xvals[-1]) / 2)
+                        if kwargs.get('add_direction', True):
+                            add_arrow(l[0], direction='right', position=(xvals[0] + xvals[-1]) / 2)
                         ax.plot(xvals[0], yvals[0], "o", color=l[0].get_color(), alpha=alpha[i])
                         ax.plot(xvals[-1], yvals[-1], "x", color=l[0].get_color(), alpha=alpha[i])
             ax.set_xlabel(self.x_labels[0])
