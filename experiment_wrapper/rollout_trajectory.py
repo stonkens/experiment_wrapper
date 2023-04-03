@@ -27,6 +27,7 @@ class RolloutTrajectory(Experiment):
         scenarios: Optional[ScenarioList] = None,
         n_sims_per_start: int = 5,
         t_sim: float = 5.0,
+        save_location: Optional[str] = None,
     ):
         """Initialize the rollout trajectory experiment. Optionally run multiple scenarios (e.g. different stochastic
         policies / disturbances / uncertain parameters) from multiple starting states
@@ -49,6 +50,7 @@ class RolloutTrajectory(Experiment):
         self.scenarios = scenarios
         self.n_sims_per_start = n_sims_per_start  # For random disturbances
         self.t_sim = t_sim
+        self.save_location = save_location
 
     def set_idx_and_labels(self, dynamics: Dynamics):
         if self.x_indices is None:  # FIXME: None or [] for initialization?
@@ -61,7 +63,7 @@ class RolloutTrajectory(Experiment):
         if self.u_labels is None:
             self.u_labels = [dynamics.CONTROLS[idi] for idi in self.u_indices]
 
-    def run(self, dynamics: Dynamics, controllers: Controllers) -> pd.DataFrame:
+    def run(self, dynamics: Dynamics, controllers: Controllers, control_bounds: np.ndarray = None) -> pd.DataFrame:
         """Overrides Experiment.run for rollout trajectory experiments. Same args as Experiment.run
 
         At every time step:
@@ -89,9 +91,7 @@ class RolloutTrajectory(Experiment):
 
             delta_t = dynamics.dt
             controller_update_freq = (
-                int(controller.controller_dt / delta_t)
-                if hasattr(controller, "controller_dt")
-                else 1
+                int(controller.controller_dt / delta_t) if hasattr(controller, "controller_dt") else 1
             )
             num_steps = int(self.t_sim / delta_t)
 
@@ -102,8 +102,10 @@ class RolloutTrajectory(Experiment):
 
                 ######## UPDATE CONTROLLER ########
                 if tstep % controller_update_freq == 0:
-                    u_current = controller(x_current, t).reshape(n_sims, dynamics.control_dims)
 
+                    u_current = controller(x_current, t).reshape(n_sims, dynamics.control_dims)
+                    if control_bounds is not None:
+                        u_current = np.clip(u_current, control_bounds[0], control_bounds[1])
                 ########### LOGGING ###############
                 for sim_index in range(n_sims):
                     base_log_packet = {"t": t}
@@ -112,9 +114,7 @@ class RolloutTrajectory(Experiment):
                     base_log_packet["rollout"] = sim_index // self.n_sims_per_start
 
                     if hasattr(controller, "save_info"):
-                        base_log_packet.update(
-                            controller.save_info(x_current[sim_index], u_current[sim_index], t)
-                        )
+                        base_log_packet.update(controller.save_info(x_current[sim_index], u_current[sim_index], t))
 
                     for i, state_index in enumerate(self.x_indices):
                         log_packet = copy(base_log_packet)
@@ -139,7 +139,9 @@ class RolloutTrajectory(Experiment):
 
                 ########### SIMULATION ###############
                 x_current = dynamics.step(x_current, u_current, t)
-
+            if self.save_location is not None:
+                print("Saved results to " + self.save_location + ".csv")
+                pd.DataFrame(results).to_csv(self.save_location + ".csv")
         return pd.DataFrame(results)
 
 
