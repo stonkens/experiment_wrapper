@@ -100,6 +100,8 @@ class RolloutTrajectory(Experiment):
             for tstep in prog_bar_range:
                 t = tstep * delta_t
 
+                t = np.ones(n_sims) * t
+
                 ######## UPDATE CONTROLLER ########
                 if tstep % controller_update_freq == 0:
 
@@ -108,7 +110,7 @@ class RolloutTrajectory(Experiment):
                         u_current = np.clip(u_current, control_bounds[0], control_bounds[1])
                 ########### LOGGING ###############
                 for sim_index in range(n_sims):
-                    base_log_packet = {"t": t}
+                    base_log_packet = {"t": t[sim_index]}
                     base_log_packet["controller"] = controller_name
                     base_log_packet["scenario"] = sim_index % self.n_sims_per_start
                     base_log_packet["rollout"] = sim_index // self.n_sims_per_start
@@ -138,7 +140,7 @@ class RolloutTrajectory(Experiment):
                             results.append(log_packet)
 
                 ########### SIMULATION ###############
-                x_current = dynamics.step(x_current, u_current, t)
+                x_current = np.array(dynamics.step(x_current, u_current, t))
             if self.save_location is not None:
                 print("Saved results to " + self.save_location + ".csv")
                 pd.DataFrame(results).to_csv(self.save_location + ".csv")
@@ -248,10 +250,11 @@ class StateSpaceExperiment(RolloutTrajectory):
         """Overrides Experiment.plot to plot state space data. Same args as Experiment.plot"""
         self.set_idx_and_labels(dynamics)
         assert len(self.x_labels) in [2, 3], "Can't plot in this dimension!"
-
+        max_time = kwargs.get("max_time", np.inf)
         ax = kwargs.get("ax")
         alpha = kwargs.get("alpha", [1] * len(results_df.controller.unique()))
         linestyles = kwargs.get("linestyles", ["-"] * len(results_df.controller.unique()))
+        linewidths = kwargs.get("linewidths", [4] * len(results_df.controller.unique()))
         # 2D visualization
         if len(self.x_labels) == 2:
 
@@ -270,13 +273,14 @@ class StateSpaceExperiment(RolloutTrajectory):
                             & (results_df.scenario == scenario)
                             & (results_df.rollout == rollout)
                         )
-                        xmask = mask & (results_df.measurement.values == self.x_labels[0])
-                        ymask = mask & (results_df.measurement.values == self.x_labels[1])
+                        time_mask = results_df.t <= max_time
+                        xmask = mask & time_mask & (results_df.measurement.values == self.x_labels[0])
+                        ymask = mask & time_mask & (results_df.measurement.values == self.x_labels[1])
                         xvals = results_df[xmask].value.values
                         yvals = results_df[ymask].value.values
 
                         if kwargs.get("color") is None:
-                            l = ax.plot(xvals, yvals, alpha=alpha[i])
+                            l = ax.plot(xvals, yvals, alpha=alpha[i], ls=linestyles[i], lw=linewidths[i])
                         else:
                             l = ax.plot(
                                 xvals,
@@ -284,11 +288,13 @@ class StateSpaceExperiment(RolloutTrajectory):
                                 color=kwargs.get("color")[i],
                                 alpha=alpha[i],
                                 ls=linestyles[i],
+                                lw=linewidths[i],
                             )
                         if kwargs.get("add_direction", True):
                             add_arrow(l[0], direction="right", position=(xvals[0] + xvals[-1]) / 2)
-                        ax.plot(xvals[0], yvals[0], "o", color=l[0].get_color(), alpha=alpha[i])
-                        ax.plot(xvals[-1], yvals[-1], "x", color=l[0].get_color(), alpha=alpha[i])
+                        ax.plot(xvals[0], yvals[0], "o", color=l[0].get_color(), alpha=alpha[i], ms = 2 * linewidths[i], lw=linewidths[i])
+                        ax.plot(xvals[-1], yvals[-1], "x", color=l[0].get_color(), alpha=alpha[i], ms = 2 * linewidths[i], lw=linewidths[i])
+
             ax.set_xlabel(self.x_labels[0])
             ax.set_ylabel(self.x_labels[1])
         # 3D visualization
