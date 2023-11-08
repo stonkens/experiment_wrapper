@@ -32,12 +32,12 @@ class Dynamics:
     def dt(self) -> float:
         return self._dt
 
-    def step(self, x: Any, u: Any, t: float) -> Any:
+    def step(self, x: Any, u: Any, d: Any, t: float) -> Any:
         pass
 
 
 class Controller:
-    """Provides a template for the functionality required from a controller class to interface with the experiment
+    """Provides a template for the functionality required from a controller / Disturbance class to interface with the experiment
     wrappper functionality.
 
     A controller class must implement the following methods:
@@ -56,7 +56,7 @@ class Controller:
 class ExtendedController(Controller):
     """Provides a template for functionality that is optional called within the experiment wrapper functionality.
 
-    A controller class (in addition to being callable) can also implement the following methods:
+    A controller / disturbance class (in addition to being callable) can also implement the following methods:
     - controller_dt: returns the time step of the controller
     - save_info: takes in the current state, control and time and returns a dictionary of information to be saved for
     all measurements
@@ -66,12 +66,12 @@ class ExtendedController(Controller):
     """
 
     def __init__(self):
-        self._controller_dt: float
+        self._dt: float
         raise RuntimeError("ExtendedController is a template class")
 
     @property
-    def controller_dt(self) -> float:
-        return self._controller_dt
+    def dt(self) -> float:
+        return self._dt
 
     def save_info(self, x: Any, u: Any, t: float) -> Dict[str, Any]:
         return {}
