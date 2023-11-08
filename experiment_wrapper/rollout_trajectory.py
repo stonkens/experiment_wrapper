@@ -110,6 +110,7 @@ class RolloutTrajectory(Experiment):
             for i, j in itertools.product(range(0, self.start_x.shape[0]), range(0, self.n_sims_per_start)):
                 x_sim_start[i * self.n_sims_per_start + j, :] = self.start_x[i, :]
 
+            ######## Initialization for each (controller, disturbance) pair ########
             x_current = x_sim_start
             u_current = np.zeros((n_sims, dynamics.control_dims))
             if hasattr(controller, "reset"):
@@ -120,14 +121,10 @@ class RolloutTrajectory(Experiment):
                 disturbance.reset(x_current)
 
             delta_t = dynamics.dt
-
-            controller_update_freq = int(controller.dt / delta_t) if hasattr(controller, "dt") else 1
-
-            disturbance_update_freq = int(disturbance.dt / delta_t) if hasattr(disturbance, "dt") else 1
-
             num_steps = int(self.t_sim / delta_t)
-
             prog_bar_range = tqdm.tqdm(range(0, num_steps), desc="Controller rollout")
+            controller_update_freq = int(controller.dt / delta_t) if hasattr(controller, "dt") else 1
+            disturbance_update_freq = int(disturbance.dt / delta_t) if hasattr(disturbance, "dt") else 1
 
             for tstep in prog_bar_range:
                 t = tstep * delta_t
@@ -228,67 +225,69 @@ class TimeSeriesExperiment(RolloutTrajectory):
         axs = np.array(axs)  # Also a np.array for num_plots = 1
 
         num = -1
+
+        # Plot each (controller, disturbance) pair as a different line
         for controller, disturbance in itertools.product(
             results_df.controller.unique(), results_df.disturbance.unique()
         ):
             num += 1
-            for scenario in results_df.scenario.unique():
-                for rollout in results_df.rollout.unique():
-                    mask = (
-                        (results_df.controller == controller)
-                        & (results_df.disturbance == disturbance)
-                        & (results_df.scenario == scenario)
-                        & (results_df.rollout == rollout)
+            for scenario, rollout in itertools.product(results_df.scenario.unique(), results_df.rollout.unique()):
+                # Mask focuses on the pair of interest
+                mask = (
+                    (results_df.controller == controller)
+                    & (results_df.disturbance == disturbance)
+                    & (results_df.scenario == scenario)
+                    & (results_df.rollout == rollout)
+                )
+
+                for i, state_label in enumerate(self.x_labels):
+                    ax = axs[i]
+                    state_mask = mask & (results_df.measurement.values == state_label)
+                    ax.plot(
+                        results_df[state_mask].t,
+                        results_df[state_mask].value,
+                        color=colors[num],
+                        alpha=alpha[num],
+                        ls=linestyles[num],
                     )
+                    ax.set_ylabel(state_label)
 
-                    for i, state_label in enumerate(self.x_labels):
-                        ax = axs[i]
-                        state_mask = mask & (results_df.measurement.values == state_label)
-                        ax.plot(
-                            results_df[state_mask].t,
-                            results_df[state_mask].value,
-                            color=colors[num],
-                            alpha=alpha[num],
-                            ls=linestyles[num],
-                        )
-                        ax.set_ylabel(state_label)
+                for i, control_label in enumerate(self.u_labels):
+                    ax = axs[len(self.x_labels) + i]
+                    control_mask = mask & (results_df.measurement.values == control_label)
+                    ax.plot(
+                        results_df[control_mask].t,
+                        results_df[control_mask].value,
+                        color=colors[num],
+                        alpha=alpha[num],
+                        ls=linestyles[num],
+                    )
+                    ax.set_ylabel(control_label)
+                    ax.set_ylabel(control_label)
 
-                    for i, control_label in enumerate(self.u_labels):
-                        ax = axs[len(self.x_labels) + i]
-                        control_mask = mask & (results_df.measurement.values == control_label)
-                        ax.plot(
-                            results_df[control_mask].t,
-                            results_df[control_mask].value,
-                            color=colors[num],
-                            alpha=alpha[num],
-                            ls=linestyles[num],
-                        )
-                        ax.set_ylabel(control_label)
-                        ax.set_ylabel(control_label)
+                for i, disturbance_label in enumerate(self.d_labels):
+                    ax = axs[len(self.x_labels) + len(self.u_labels) + i]
+                    disturbance_mask = mask & (results_df.measurement.values == disturbance_label)
+                    ax.plot(
+                        results_df[disturbance_mask].t,
+                        results_df[disturbance_mask].value,
+                        color=colors[num],
+                        alpha=alpha[num],
+                        ls=linestyles[num],
+                    )
+                    ax.set_ylabel(disturbance_label)
 
-                    for i, disturbance_label in enumerate(self.d_labels):
-                        ax = axs[len(self.x_labels) + len(self.u_labels) + i]
-                        disturbance_mask = mask & (results_df.measurement.values == disturbance_label)
-                        ax.plot(
-                            results_df[disturbance_mask].t,
-                            results_df[disturbance_mask].value,
-                            color=colors[num],
-                            alpha=alpha[num],
-                            ls=linestyles[num],
-                        )
-                        ax.set_ylabel(disturbance_label)
-
-                    for i, extra_label in enumerate(extra_measurements):
-                        ax = axs[len(self.x_labels) + len(self.u_labels) + len(self.d_labels) + i]
-                        extra_mask = mask & (results_df.measurement.values == extra_label)
-                        ax.plot(
-                            results_df[extra_mask].t,
-                            results_df[extra_mask].value,
-                            color=colors[num],
-                            alpha=alpha[num],
-                            ls=linestyles[num],
-                        )
-                        ax.set_ylabel(extra_label)
+                for i, extra_label in enumerate(extra_measurements):
+                    ax = axs[len(self.x_labels) + len(self.u_labels) + len(self.d_labels) + i]
+                    extra_mask = mask & (results_df.measurement.values == extra_label)
+                    ax.plot(
+                        results_df[extra_mask].t,
+                        results_df[extra_mask].value,
+                        color=colors[num],
+                        alpha=alpha[num],
+                        ls=linestyles[num],
+                    )
+                    ax.set_ylabel(extra_label)
 
         axs[-1].set_xlabel("t")
         axs[-1].set_xlim(min(results_df.t), max(results_df.t))
@@ -325,60 +324,60 @@ class StateSpaceExperiment(RolloutTrajectory):
             else:
                 fig = ax.get_figure()
             i = -1
+            # Plot each (controller, disturbance) pair as a different line
             for controller, disturbance in itertools.product(
                 results_df.controller.unique(), results_df.disturbance.unique()
             ):
                 i += 1
-                for scenario in results_df.scenario.unique():
-                    for rollout in results_df.rollout.unique():
-                        mask = (
-                            (results_df.controller == controller)
-                            & (results_df.disturbance == disturbance)
-                            & (results_df.scenario == scenario)
-                            & (results_df.rollout == rollout)
-                        )
-                        time_mask = results_df.t <= max_time
-                        xmask = mask & time_mask & (results_df.measurement.values == self.x_labels[0])
-                        ymask = mask & time_mask & (results_df.measurement.values == self.x_labels[1])
-                        xvals = results_df[xmask].value.values
-                        yvals = results_df[ymask].value.values
+                for scenario, rollout in itertools.product(results_df.scenario.unique(), results_df.rollout.unique()):
+                    mask = (
+                        (results_df.controller == controller)
+                        & (results_df.disturbance == disturbance)
+                        & (results_df.scenario == scenario)
+                        & (results_df.rollout == rollout)
+                    )
+                    time_mask = results_df.t <= max_time
+                    xmask = mask & time_mask & (results_df.measurement.values == self.x_labels[0])
+                    ymask = mask & time_mask & (results_df.measurement.values == self.x_labels[1])
+                    xvals = results_df[xmask].value.values
+                    yvals = results_df[ymask].value.values
 
-                        if kwargs.get("color") is None:
-                            l = ax.plot(xvals, yvals, alpha=alpha[i], ls=linestyles[i], lw=linewidths[i])
-                        else:
-                            l = ax.plot(
-                                xvals,
-                                yvals,
-                                color=kwargs.get("color")[i],
-                                alpha=alpha[i],
-                                ls=linestyles[i],
-                                lw=linewidths[i],
-                            )
-                        if kwargs.get("add_direction", True):
-                            add_arrow(l[0], direction="right", position=(xvals[0] + xvals[-1]) / 2)
-                        ax.plot(
-                            xvals[0],
-                            yvals[0],
-                            "o",
-                            color=l[0].get_color(),
+                    if kwargs.get("color") is None:
+                        l = ax.plot(xvals, yvals, alpha=alpha[i], ls=linestyles[i], lw=linewidths[i])
+                    else:
+                        l = ax.plot(
+                            xvals,
+                            yvals,
+                            color=kwargs.get("color")[i],
                             alpha=alpha[i],
-                            ms=2 * linewidths[i],
+                            ls=linestyles[i],
                             lw=linewidths[i],
                         )
-                        ax.plot(
-                            xvals[-1],
-                            yvals[-1],
-                            "x",
-                            color=l[0].get_color(),
-                            alpha=alpha[i],
-                            ms=2 * linewidths[i],
-                            lw=linewidths[i],
-                        )
+                    if kwargs.get("add_direction", True):
+                        add_arrow(l[0], direction="right", position=(xvals[0] + xvals[-1]) / 2)
+                    ax.plot(
+                        xvals[0],
+                        yvals[0],
+                        "o",
+                        color=l[0].get_color(),
+                        alpha=alpha[i],
+                        ms=2 * linewidths[i],
+                        lw=linewidths[i],
+                    )
+                    ax.plot(
+                        xvals[-1],
+                        yvals[-1],
+                        "x",
+                        color=l[0].get_color(),
+                        alpha=alpha[i],
+                        ms=2 * linewidths[i],
+                        lw=linewidths[i],
+                    )
 
             ax.set_xlabel(self.x_labels[0])
             ax.set_ylabel(self.x_labels[1])
-        # 3D visualization
-        else:
+
+        else:  # 3D visualization
             raise NotImplementedError("Future work!")
 
         fig_handle = ("State space visualization", fig)
