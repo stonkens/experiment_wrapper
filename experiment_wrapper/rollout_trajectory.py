@@ -404,6 +404,7 @@ def add_arrow(line, position=None, direction="right", size=25, color=None):
         position = xdata.mean()
     # find closest index
     start_ind = np.argmin(np.absolute(xdata - position - 5 + 10 * np.random.rand()))
+    start_ind = np.clip(start_ind, 0, len(xdata) - 2)
     if direction == "right":
         end_ind = start_ind + 1
     else:
